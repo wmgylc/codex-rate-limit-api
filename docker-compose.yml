@@ -1,0 +1,13 @@
+services:
+  codex-rate-limit-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      CODEX_HOST_SSH_HOST: ${CODEX_HOST_SSH_HOST:-host.docker.internal}
+      CODEX_HOST_SSH_USER: ${CODEX_HOST_SSH_USER:-mac}
+      CODEX_HOST_SSH_PASSWORD: ${CODEX_HOST_SSH_PASSWORD:?set CODEX_HOST_SSH_PASSWORD}
+      CODEX_HOST_CODEX_PATH: ${CODEX_HOST_CODEX_PATH:-/opt/homebrew/bin/codex}
+      CODEX_HOST_TIMEZONE: ${CODEX_HOST_TIMEZONE:-Asia/Shanghai}
+      CODEX_RATE_LIMIT_REFRESH_SECONDS: ${CODEX_RATE_LIMIT_REFRESH_SECONDS:-300}
+    restart: unless-stopped

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-rate-limit-api"
+version = "0.1.0"
+description = "Serve Codex 5h and weekly rate limit usage over HTTP"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+tt-http = "src.http_api:main"
+
+[tool.setuptools.packages.find]
+include = ["src*"]

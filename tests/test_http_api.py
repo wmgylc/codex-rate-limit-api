@@ -80,24 +80,31 @@ class HttpApiTest(unittest.TestCase):
     def test_measure_usage_latency_returns_probe_value(self):
         from src.http_api import measure_usage_latency_ms
 
-        self.assertEqual(measure_usage_latency_ms(lambda: 123, timeout_seconds=0.1), 123)
+        self.assertEqual(measure_usage_latency_ms(lambda timeout: 123, timeout_seconds=0.1), 123)
 
-    def test_measure_usage_latency_returns_3000_on_failure(self):
+    def test_measure_usage_latency_returns_timeout_ms_on_failure(self):
         from src.http_api import measure_usage_latency_ms
 
-        def fail():
+        def fail(timeout):
             raise RuntimeError("boom")
 
-        self.assertEqual(measure_usage_latency_ms(fail, timeout_seconds=0.1), 3000)
+        self.assertEqual(measure_usage_latency_ms(fail, timeout_seconds=0.1), 100)
 
-    def test_measure_usage_latency_returns_3000_on_timeout(self):
+    def test_measure_usage_latency_returns_timeout_ms_on_timeout(self):
         from src.http_api import measure_usage_latency_ms
 
-        def slow():
+        def slow(timeout):
             time.sleep(0.2)
             return 123
 
-        self.assertEqual(measure_usage_latency_ms(slow, timeout_seconds=0.01), 3000)
+        self.assertEqual(measure_usage_latency_ms(slow, timeout_seconds=0.01), 10)
+
+    def test_parse_latency_timeout_uses_default_and_query_param(self):
+        from src.http_api import parse_latency_timeout
+
+        self.assertEqual(parse_latency_timeout("/api/codex/usage/latency"), 5.0)
+        self.assertEqual(parse_latency_timeout("/api/codex/usage/latency?timeout=3"), 3.0)
+        self.assertEqual(parse_latency_timeout("/api/codex/usage/latency?timeout=bad"), 5.0)
 
 
 if __name__ == "__main__":

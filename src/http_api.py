@@ -6,6 +6,7 @@ import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping
+from urllib.parse import parse_qs, urlsplit
 
 from .adapters import codex
 from .adapters import codex_auth_usage
@@ -115,23 +116,34 @@ def build_codex_rate_limit_payload(
 
 
 def measure_usage_latency_ms(
-    measure_latency: Callable[[], int] = lambda: codex_auth_usage.measure_usage_request_latency_ms(3.0),
-    timeout_seconds: float = 3.0,
+    measure_latency: Callable[[float], int] = codex_auth_usage.measure_usage_request_latency_ms,
+    timeout_seconds: float = 5.0,
 ) -> int:
     result: queue.Queue[int] = queue.Queue(maxsize=1)
+    timeout_ms = round(timeout_seconds * 1000)
 
     def run() -> None:
         try:
-            result.put_nowait(measure_latency())
+            result.put_nowait(measure_latency(timeout_seconds))
         except Exception:
-            result.put_nowait(3000)
+            result.put_nowait(timeout_ms)
 
     thread = threading.Thread(target=run, name="usage-latency-probe", daemon=True)
     thread.start()
     try:
         return result.get(timeout=timeout_seconds)
     except queue.Empty:
-        return 3000
+        return timeout_ms
+
+
+def parse_latency_timeout(path: str) -> float:
+    query = parse_qs(urlsplit(path).query)
+    raw = query.get("timeout", ["5"])[0]
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 5.0
+    return max(0.1, min(value, 60.0))
 
 
 def encode_json_response(payload: Mapping[str, JsonValue], status: int = 200) -> tuple[int, dict[str, str], bytes]:
@@ -147,14 +159,15 @@ class CodexRateLimitHandler(BaseHTTPRequestHandler):
     server_version = "codex-rate-limit-api/0.1"
 
     def do_GET(self) -> None:
-        if self.path == "/health":
+        path = urlsplit(self.path).path
+        if path == "/health":
             self._send_json({"ok": True})
             return
-        if self.path in ("/api/codex/rate-limits", "/api/codex/usage"):
+        if path in ("/api/codex/rate-limits", "/api/codex/usage"):
             self._send_json(build_codex_rate_limit_payload(_RATE_LIMIT_CACHE.get))
             return
-        if self.path == "/api/codex/usage/latency":
-            self._send_text(str(measure_usage_latency_ms()))
+        if path == "/api/codex/usage/latency":
+            self._send_text(str(measure_usage_latency_ms(timeout_seconds=parse_latency_timeout(self.path))))
             return
         self._send_json({"error": "not_found"}, status=404)
 

@@ -70,7 +70,8 @@ def measure_usage_request_latency_ms(max_seconds: float = 3.0) -> int:
     usage_started = time.perf_counter()
     fetch_usage_response(auth, timeout=max_seconds)
     elapsed = _elapsed_ms(usage_started)
-    return elapsed if elapsed < 999 else 999
+    max_ms = round(max_seconds * 1000)
+    return elapsed if elapsed < max_ms else max_ms
 
 
 def fetch_host_auth() -> dict[str, Any]:

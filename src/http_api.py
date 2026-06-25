@@ -124,14 +124,14 @@ def measure_usage_latency_ms(
         try:
             result.put_nowait(measure_latency())
         except Exception:
-            result.put_nowait(999)
+            result.put_nowait(3000)
 
     thread = threading.Thread(target=run, name="usage-latency-probe", daemon=True)
     thread.start()
     try:
         return result.get(timeout=timeout_seconds)
     except queue.Empty:
-        return 999
+        return 3000
 
 
 def encode_json_response(payload: Mapping[str, JsonValue], status: int = 200) -> tuple[int, dict[str, str], bytes]:

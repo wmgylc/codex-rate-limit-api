@@ -82,22 +82,22 @@ class HttpApiTest(unittest.TestCase):
 
         self.assertEqual(measure_usage_latency_ms(lambda: 123, timeout_seconds=0.1), 123)
 
-    def test_measure_usage_latency_returns_999_on_failure(self):
+    def test_measure_usage_latency_returns_3000_on_failure(self):
         from src.http_api import measure_usage_latency_ms
 
         def fail():
             raise RuntimeError("boom")
 
-        self.assertEqual(measure_usage_latency_ms(fail, timeout_seconds=0.1), 999)
+        self.assertEqual(measure_usage_latency_ms(fail, timeout_seconds=0.1), 3000)
 
-    def test_measure_usage_latency_returns_999_on_timeout(self):
+    def test_measure_usage_latency_returns_3000_on_timeout(self):
         from src.http_api import measure_usage_latency_ms
 
         def slow():
             time.sleep(0.2)
             return 123
 
-        self.assertEqual(measure_usage_latency_ms(slow, timeout_seconds=0.01), 999)
+        self.assertEqual(measure_usage_latency_ms(slow, timeout_seconds=0.01), 3000)
 
 
 if __name__ == "__main__":

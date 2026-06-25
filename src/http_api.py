@@ -1,12 +1,14 @@
 import argparse
 import json
 import os
+import queue
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping
 
 from .adapters import codex
+from .adapters import codex_auth_usage
 from .adapters.types import RateLimits
 
 
@@ -112,6 +114,26 @@ def build_codex_rate_limit_payload(
     }
 
 
+def measure_usage_latency_ms(
+    measure_latency: Callable[[], int] = lambda: codex_auth_usage.measure_usage_request_latency_ms(3.0),
+    timeout_seconds: float = 3.0,
+) -> int:
+    result: queue.Queue[int] = queue.Queue(maxsize=1)
+
+    def run() -> None:
+        try:
+            result.put_nowait(measure_latency())
+        except Exception:
+            result.put_nowait(999)
+
+    thread = threading.Thread(target=run, name="usage-latency-probe", daemon=True)
+    thread.start()
+    try:
+        return result.get(timeout=timeout_seconds)
+    except queue.Empty:
+        return 999
+
+
 def encode_json_response(payload: Mapping[str, JsonValue], status: int = 200) -> tuple[int, dict[str, str], bytes]:
     body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return status, {
@@ -131,6 +153,9 @@ class CodexRateLimitHandler(BaseHTTPRequestHandler):
         if self.path in ("/api/codex/rate-limits", "/api/codex/usage"):
             self._send_json(build_codex_rate_limit_payload(_RATE_LIMIT_CACHE.get))
             return
+        if self.path == "/api/codex/usage/latency":
+            self._send_text(str(measure_usage_latency_ms()))
+            return
         self._send_json({"error": "not_found"}, status=404)
 
     def log_message(self, fmt: str, *args: object) -> None:
@@ -142,6 +167,15 @@ class CodexRateLimitHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_text(self, text: str, status: int = 200) -> None:
+        body = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 

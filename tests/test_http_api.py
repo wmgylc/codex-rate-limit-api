@@ -1,4 +1,5 @@
 import json
+import time
 import unittest
 from dataclasses import dataclass
 
@@ -75,6 +76,28 @@ class HttpApiTest(unittest.TestCase):
         cache.refresh()
 
         self.assertEqual(cache.get().five_hour_pct, 22.0)
+
+    def test_measure_usage_latency_returns_probe_value(self):
+        from src.http_api import measure_usage_latency_ms
+
+        self.assertEqual(measure_usage_latency_ms(lambda: 123, timeout_seconds=0.1), 123)
+
+    def test_measure_usage_latency_returns_999_on_failure(self):
+        from src.http_api import measure_usage_latency_ms
+
+        def fail():
+            raise RuntimeError("boom")
+
+        self.assertEqual(measure_usage_latency_ms(fail, timeout_seconds=0.1), 999)
+
+    def test_measure_usage_latency_returns_999_on_timeout(self):
+        from src.http_api import measure_usage_latency_ms
+
+        def slow():
+            time.sleep(0.2)
+            return 123
+
+        self.assertEqual(measure_usage_latency_ms(slow, timeout_seconds=0.01), 999)
 
 
 if __name__ == "__main__":

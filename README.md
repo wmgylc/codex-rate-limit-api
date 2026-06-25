@@ -9,6 +9,7 @@
 - `GET /health`
 - `GET /api/codex/rate-limits`
 - `GET /api/codex/usage`
+- `GET /api/codex/usage/latency`
 
 `/api/codex/rate-limits` 和 `/api/codex/usage` 返回相同结构：
 
@@ -50,6 +51,18 @@
 - `reset_at_iso` 是 UTC ISO 时间
 - `updated_at` 是最近一次成功采集时间
 - 刷新失败时不会清空旧缓存
+
+`/api/codex/usage/latency` 用于检测访问 ChatGPT `wham/usage` 的速度，返回纯文本数字，单位毫秒：
+
+```text
+238
+```
+
+接口最多等待 3 秒，超时或失败直接返回：
+
+```text
+999
+```
 
 ## Docker 部署
 

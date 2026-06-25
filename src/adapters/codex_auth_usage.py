@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +24,55 @@ def load_rate_limits_from_host_auth() -> RateLimits | None:
     return fetch_usage_rate_limits(auth)
 
 
+def measure_usage_request_latency() -> dict[str, Any]:
+    started = time.perf_counter()
+    auth_started = time.perf_counter()
+    auth = fetch_host_auth()
+    auth_ms = _elapsed_ms(auth_started)
+    refreshed = False
+    refresh_ms = None
+
+    if _auth_needs_refresh(auth):
+        refresh_started = time.perf_counter()
+        auth = refresh_auth(auth)
+        write_host_auth(auth)
+        refresh_ms = _elapsed_ms(refresh_started)
+        refreshed = True
+
+    usage_started = time.perf_counter()
+    usage = fetch_usage_response(auth)
+    usage_ms = _elapsed_ms(usage_started)
+    rate_limits = parse_usage_response(usage)
+
+    return {
+        "ok": rate_limits is not None,
+        "source": "chatgpt_wham_usage",
+        "url": os.environ.get("CODEX_USAGE_URL", USAGE_URL),
+        "auth_read_ms": auth_ms,
+        "auth_refreshed": refreshed,
+        "auth_refresh_ms": refresh_ms,
+        "usage_request_ms": usage_ms,
+        "total_ms": _elapsed_ms(started),
+        "measured_at": datetime.now(timezone.utc).isoformat(),
+        "5h": {
+            "used_percent": rate_limits.five_hour_pct if rate_limits else None,
+            "reset_at": rate_limits.five_hour_resets_at if rate_limits else None,
+        },
+        "wk": {
+            "used_percent": rate_limits.seven_day_pct if rate_limits else None,
+            "reset_at": rate_limits.seven_day_resets_at if rate_limits else None,
+        },
+    }
+
+
+def measure_usage_request_latency_ms(max_seconds: float = 3.0) -> int:
+    auth = fetch_host_auth()
+    usage_started = time.perf_counter()
+    fetch_usage_response(auth, timeout=max_seconds)
+    elapsed = _elapsed_ms(usage_started)
+    return elapsed if elapsed < 999 else 999
+
+
 def fetch_host_auth() -> dict[str, Any]:
     output = _ssh_read_auth_json()
     data = json.loads(output)
@@ -32,6 +82,11 @@ def fetch_host_auth() -> dict[str, Any]:
 
 
 def fetch_usage_rate_limits(auth: dict[str, Any]) -> RateLimits | None:
+    usage = fetch_usage_response(auth)
+    return parse_usage_response(usage)
+
+
+def fetch_usage_response(auth: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
     tokens = auth.get("tokens") or {}
     access_token = tokens.get("access_token")
     if not access_token:
@@ -47,16 +102,17 @@ def fetch_usage_rate_limits(auth: dict[str, Any]) -> RateLimits | None:
         headers["ChatGPT-Account-Id"] = account_id
 
     request = urllib.request.Request(os.environ.get("CODEX_USAGE_URL", USAGE_URL), headers=headers)
+    timeout_seconds = timeout if timeout is not None else float(os.environ.get("CODEX_USAGE_TIMEOUT", "30"))
     try:
-        with urllib.request.urlopen(request, timeout=float(os.environ.get("CODEX_USAGE_TIMEOUT", "30"))) as response:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
             body = response.read()
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"Codex usage request failed with HTTP {exc.code}") from exc
 
     usage = json.loads(body)
     if not isinstance(usage, dict):
-        return None
-    return parse_usage_response(usage)
+        raise RuntimeError("Codex usage response is not an object")
+    return usage
 
 
 def parse_usage_response(usage: dict[str, Any]) -> RateLimits | None:
@@ -209,6 +265,10 @@ def _integer(value: Any) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+def _elapsed_ms(started: float) -> int:
+    return round((time.perf_counter() - started) * 1000)
 
 
 def _shell_quote(value: str) -> str:
